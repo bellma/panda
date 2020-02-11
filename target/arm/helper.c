@@ -16,6 +16,8 @@
 #include "exec/semihost.h"
 #include "sysemu/kvm.h"
 
+#include "panda/rr/rr_log_all.h"
+
 #define ARM_CPU_FREQ 1000000000 /* FIXME: 1 GHz, should be configurable */
 
 #ifndef CONFIG_USER_ONLY
@@ -1634,12 +1636,42 @@ static CPAccessResult gt_stimer_access(CPUARMState *env,
 
 static uint64_t gt_get_countervalue(CPUARMState *env)
 {
-    return qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL) / GTIMER_SCALE;
+    uint64_t result;
+
+    /* qemu_clock_get_ns() uses gettimeofday() to get the time. 
+     * This introduces non-determinism into the replay.
+     */
+    RR_DO_RECORD_OR_REPLAY(
+        /*action=*/result=qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL) / GTIMER_SCALE,
+        /*record=*/rr_input_8((uint64_t*)&result),
+        /*replay=*/rr_input_8((uint64_t*)&result),
+        /*location=*/RR_CALLSITE_GET_CLOCK);
+    return result;
 }
 
-static void gt_recalc_timer(ARMCPU *cpu, int timeridx)
+#define gt_recalc_timer(cpu, timeridx) \
+    gt_recalc_timer_hook(cpu, timeridx, false, 0)
+
+static void gt_recalc_timer_hook(ARMCPU *cpu, int timeridx, bool is_panda_cb, uint64_t count)
 {
     ARMGenericTimer *gt = &cpu->env.cp15.c14_timer[timeridx];
+
+    if (rr_in_replay()) {
+        if (!is_panda_cb) {
+            return;
+        }
+    } else {
+        /* Can't call gt_get_countervalue() directly here because it
+         * will cause an infinite loop trying to continuously call
+         * the gt_recalc_timer() skipped call
+         */
+        count = qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL) / GTIMER_SCALE;
+    }
+
+    if (rr_in_record()) {
+        rr_record_arm_timer(
+            RR_CALLSITE_GT_RECALC_TIMER, cpu->parent_obj.cpu_index, timeridx, count);
+    }
 
     if (gt->ctl & 1) {
         /* Timer enabled: calculate and set current ISTATUS, irq, and
@@ -1647,7 +1679,6 @@ static void gt_recalc_timer(ARMCPU *cpu, int timeridx)
          */
         uint64_t offset = timeridx == GTIMER_VIRT ?
                                       cpu->env.cp15.cntvoff_el2 : 0;
-        uint64_t count = gt_get_countervalue(&cpu->env);
         /* Note that this must be unsigned 64 bit arithmetic: */
         int istatus = count - offset >= gt->cval;
         uint64_t nexttick;
@@ -1673,7 +1704,10 @@ static void gt_recalc_timer(ARMCPU *cpu, int timeridx)
         if (nexttick > INT64_MAX / GTIMER_SCALE) {
             nexttick = INT64_MAX / GTIMER_SCALE;
         }
-        timer_mod(cpu->gt_timer[timeridx], nexttick);
+
+        if (!rr_in_replay()) {
+            timer_mod(cpu->gt_timer[timeridx], nexttick);
+        }
         trace_arm_gt_recalc(timeridx, irqstate, nexttick);
     } else {
         /* Timer disabled: ISTATUS and timer output always clear */
@@ -1682,6 +1716,12 @@ static void gt_recalc_timer(ARMCPU *cpu, int timeridx)
         timer_del(cpu->gt_timer[timeridx]);
         trace_arm_gt_recalc_disabled(timeridx);
     }
+}
+
+void panda_gt_recalc_timer(uint32_t cpu_idx, uint32_t timer_idx, uint64_t count)
+{
+    ARMCPU *cpu = ARM_CPU(qemu_get_cpu(cpu_idx));
+    gt_recalc_timer_hook(cpu, timer_idx, true, count);
 }
 
 static void gt_timer_reset(CPUARMState *env, const ARMCPRegInfo *ri,

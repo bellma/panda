@@ -351,6 +351,9 @@ static inline void rr_write_item(RR_log_entry item)
                 case RR_CALL_SERIAL_WRITE:
                     RR_WRITE_ITEM(args->variant.serial_write_args);
                     break;
+                case RR_CALL_ARM_TIMER:
+                    RR_WRITE_ITEM(args->variant.arm_timer_args);
+                    break;
                 default:
                     // mz unimplemented
                     rr_assert(0 && "Unimplemented skipped call!");
@@ -646,6 +649,15 @@ void rr_record_serial_write(RR_callsite_id call_site, uint64_t fifo_addr,
             .fifo_addr = fifo_addr, .port_addr = port_addr, .value = value}});
 }
 
+void rr_record_arm_timer(RR_callsite_id call_site, uint32_t cpu_idx,
+                         uint32_t timer_idx, uint64_t count)
+{
+    rr_record_skipped_call((RR_skipped_call_args){
+        .kind = RR_CALL_ARM_TIMER,
+        .variant.arm_timer_args = {
+            .cpu_idx = cpu_idx, .timer_idx = timer_idx, .count = count}});
+}
+
 // mz record a marker for end of the log
 static inline void rr_record_end_of_log(void) {
     rr_write_item((RR_log_entry) {
@@ -855,6 +867,10 @@ static RR_log_entry *rr_read_item(void) {
                 case RR_CALL_SERIAL_WRITE:
                     RR_READ_ITEM(args->variant.serial_write_args);
                     break;
+                case RR_CALL_ARM_TIMER:
+                    RR_READ_ITEM(args->variant.arm_timer_args);
+                    break;
+
                 default:
                     // mz unimplemented
                     rr_assert(0 && "Unimplemented skipped call!");
@@ -1169,6 +1185,12 @@ void rr_replay_skipped_calls_internal(RR_callsite_id call_site)
                 case RR_CALL_SERIAL_WRITE: {
                     RR_serial_write_args write = args.variant.serial_write_args;
                     panda_callbacks_replay_serial_write(first_cpu, write.fifo_addr, write.port_addr, write.value);
+                } break;
+                case RR_CALL_ARM_TIMER: {
+#if defined(TARGET_ARM)
+                    RR_arm_timer_args timer = args.variant.arm_timer_args;
+                    panda_gt_recalc_timer(timer.cpu_idx, timer.timer_idx, timer.count);
+#endif
                 } break;
 
                 default:

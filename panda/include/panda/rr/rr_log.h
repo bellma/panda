@@ -97,6 +97,7 @@ typedef struct {
         RR_serial_send_args serial_send_args;
         RR_serial_write_args serial_write_args;
         RR_cpu_reg_write_args cpu_reg_write_args;
+        RR_arm_timer_args arm_timer_args;
     } variant;
     // mz XXX HACK
     uint64_t buf_addr_rec;

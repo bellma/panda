@@ -106,6 +106,7 @@ extern void rr_signal_disagreement(RR_prog_point current,
         ACTION(RR_CALL_SERIAL_SEND),       /* send byte on serial port */      \
         ACTION(RR_CALL_SERIAL_WRITE),      /* write byte to serial tx fifo */  \
         ACTION(RR_CALL_CPU_REG_WRITE),     /* */                               \
+        ACTION(RR_CALL_ARM_TIMER),         /* arm timer */                     \
         ACTION(RR_CALL_LAST)
 
 typedef enum {
@@ -197,6 +198,8 @@ static inline const char* get_log_entry_kind_string(RR_log_entry_kind kind)
         ACTION(RR_CALLSITE_E1000_START_XMIT),                                  \
         ACTION(RR_CALLSITE_SERIAL_RECEIVE), ACTION(RR_CALLSITE_SERIAL_READ),   \
         ACTION(RR_CALLSITE_SERIAL_SEND), ACTION(RR_CALLSITE_SERIAL_WRITE),     \
+        ACTION(RR_CALLSITE_GT_RECALC_TIMER),                                   \
+        ACTION(RR_CALLSITE_GET_CLOCK),                                         \
         ACTION(RR_CALLSITE_LAST)
 
 typedef enum {
@@ -512,8 +515,18 @@ void rr_record_serial_send(RR_callsite_id call_site, uint64_t fifo_addr,
 void rr_record_serial_write(RR_callsite_id call_site, uint64_t fifo_addr,
                             uint32_t port_addr, uint8_t value);
 
+typedef struct {
+    uint32_t cpu_idx;
+    uint32_t timer_idx;
+    uint64_t count;
+} RR_arm_timer_args;
+
+void rr_record_arm_timer(RR_callsite_id call_site, uint32_t cpu_idx,
+                         uint32_t timeridx, uint64_t count);
+
 // Needed from main-loop.c which is not target-specific
 void rr_tracked_mem_regions_record(void);
 void rr_begin_main_loop_wait(void);
 void rr_end_main_loop_wait(void);
 
+void panda_gt_recalc_timer(uint32_t cpu_idx, uint32_t timer_idx, uint64_t count);

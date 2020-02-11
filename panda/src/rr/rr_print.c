@@ -37,7 +37,7 @@ static inline uint8_t log_is_empty(void) {
 
 RR_debug_level_type rr_debug_level = RR_DEBUG_WHISPER;
 
-// write this program point to this file 
+// write this program point to this file
 static void rr_spit_prog_point_fp(FILE *fp, RR_prog_point pp) {
   fprintf(fp, "{guest_instr_count=%llu}\n",
       (unsigned long long)pp.guest_instr_count);
@@ -107,9 +107,13 @@ static void rr_spit_log_entry(RR_log_entry item) {
                     case RR_CALL_SERIAL_READ:
                         callbytes = sizeof(args->variant.serial_read_args);
                         break;
+                    case RR_CALL_ARM_TIMER:
+                        callbytes = sizeof(args->variant.arm_timer_args);
+                        break;
+
                     default: break;
                 }
-                printf("\tRR_SKIPPED_CALL_(%s) from %s %d bytes\n", 
+                printf("\tRR_SKIPPED_CALL_(%s) from %s %d bytes\n",
                         get_skipped_call_kind_string(item.variant.call_args.kind),
                         get_callsite_string(item.header.callsite_loc),
                         callbytes);
@@ -125,7 +129,7 @@ static void rr_spit_log_entry(RR_log_entry item) {
 }
 
 //mz allocate a new entry (not filled yet)
-static inline RR_log_entry *alloc_new_entry(void) 
+static inline RR_log_entry *alloc_new_entry(void)
 {
     static RR_log_entry *new_entry = NULL;
     if(!new_entry) new_entry = g_new(RR_log_entry, 1);
@@ -133,7 +137,7 @@ static inline RR_log_entry *alloc_new_entry(void)
     return new_entry;
 }
 
-static inline void free_entry_params(RR_log_entry *entry) 
+static inline void free_entry_params(RR_log_entry *entry)
 {
     //mz cleanup associated resources
     switch (entry->header.kind) {
@@ -177,7 +181,7 @@ static RR_log_entry *rr_read_item(void) {
             // replay is done - we've reached the end of file
             //mz we should never get here!
             assert(0);
-        } 
+        }
         else {
             //mz some other kind of error
             //mz XXX something more graceful, perhaps?
@@ -276,6 +280,11 @@ static RR_log_entry *rr_read_item(void) {
                     case RR_CALL_SERIAL_WRITE:
                         assert(fread(&(args->variant.serial_write_args),
                                      sizeof(args->variant.serial_write_args), 1,
+                                     rr_nondet_log->fp) == 1);
+                        break;
+                    case RR_CALL_ARM_TIMER:
+                        assert(fread(&(args->variant.arm_timer_args),
+                                     sizeof(args->variant.arm_timer_args), 1,
                                      rr_nondet_log->fp) == 1);
                         break;
                     default:

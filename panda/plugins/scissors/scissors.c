@@ -76,7 +76,7 @@ static INLINEIT void rr_fcopy(void *ptr, size_t size, size_t nmemb, FILE *oldlog
     rr_fwrite(ptr, size, nmemb, newlog);
 }
 
-static INLINEIT RR_log_entry *alloc_new_entry(void) 
+static INLINEIT RR_log_entry *alloc_new_entry(void)
 {
     static RR_log_entry *new_entry = NULL;
     if(!new_entry) new_entry = g_new(RR_log_entry, 1);
@@ -201,6 +201,10 @@ static RR_prog_point copy_entry(void) {
                 case RR_CALL_SERIAL_WRITE:
                     RR_COPY_ITEM(args->variant.serial_write_args);
                     break;
+                case RR_CALL_ARM_TIMER:
+                    RR_COPY_ITEM(args->variant.arm_timer_args);
+                    break;
+
                 default:
                     //mz unimplemented
                     sassert(0, 3);
@@ -227,7 +231,7 @@ static void start_snip(uint64_t count) {
 
     actual_start_count = count;
     printf("Saving snapshot at instr count %" PRIx64 "...\n", count);
-    
+
     // Force running state
     global_state_store_running();
     printf("writing snapshot:\t%s\n", snp_name);
@@ -236,7 +240,7 @@ static void start_snip(uint64_t count) {
     QEMUFile* snp = qemu_fopen_channel_output(QIO_CHANNEL(ioc));
     qemu_savevm_state(snp, NULL);
     qemu_fclose(snp);
-    
+
     printf("Beginning cut-and-paste process at prog point: % " PRId64 "\n", (uint64_t) rr_get_guest_instr_count());
 
     printf("Writing entries to %s...\n", nondet_name);
@@ -246,22 +250,22 @@ static void start_snip(uint64_t count) {
     RR_prog_point prog_point = {0};
     fwrite(&prog_point.guest_instr_count,
            sizeof(prog_point.guest_instr_count), 1, newlog);
-    
+
     fseek(oldlog, ftell(rr_nondet_log->fp), SEEK_SET);
-    
+
     // If there are items in the queue, then start copying the log
     // from there
     RR_log_entry *item = rr_get_queue_head();
     if (item != NULL) fseek(oldlog, item->header.file_pos, SEEK_SET);
-    
+
     //rw: For some reason I need to add an interrupt entry at the beginning of the log?
     RR_log_entry temp;
-    
+
     memset(&temp, 0, sizeof(RR_log_entry));
     temp.header.kind = RR_INTERRUPT_REQUEST;
     temp.header.callsite_loc = RR_CALLSITE_CPU_HANDLE_INTERRUPT_BEFORE;
     temp.variant.pending_interrupts = 2;
-    
+
     fwrite(&temp.header.prog_point, sizeof(temp.header.prog_point), 1, newlog);
     fwrite(&temp.header.kind, 1, 1, newlog);
     fwrite(&temp.header.callsite_loc, 1, 1, newlog);
@@ -271,7 +275,7 @@ static void start_snip(uint64_t count) {
         prog_point = copy_entry();
     }
     pp_last_copied_log_entry = prog_point;
-    
+
     snipping = true;
     printf("Continuing with replay.\n");
 }
@@ -292,7 +296,7 @@ static void end_snip(void) {
             pp = copy_entry();
         }
     }
-    
+
 
     printf ("rr_queue_empy = %d\n", (int) rr_queue_empty());
 
